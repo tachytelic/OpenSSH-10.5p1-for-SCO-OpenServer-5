@@ -12,8 +12,19 @@
 
 set -e
 
+# Two variants:
+#   (default)     linked against OpenSSL, supports RSA, ECDSA, DH/ECDH, AES-GCM
+#   --minimal     --without-openssl, ed25519 only, much smaller attack surface
+#
+# The default needs OpenSSL 3.x installed, which itself needs Perl 5.10+:
+#   https://github.com/tachytelic/OpenSSL-3.5.0-for-SCO-OpenServer-5
+#   https://github.com/tachytelic/Perl-5.38.2-for-SCO-OpenServer-5
+VARIANT=openssl
+[ "$1" = "--minimal" ] && VARIANT=minimal
+
 SCRIPT_DIR=`cd \`dirname "$0"\` && pwd`
 VERSION=10.5p1
+OPENSSL_DIR=${OPENSSL_DIR:-/usr/local/openssl-3.5.0}
 TARBALL=openssh-${VERSION}.tar.gz
 SRCDIR=openssh-${VERSION}
 URL=https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/${TARBALL}
@@ -70,16 +81,30 @@ cd "$SRCDIR"
 echo "Applying SCO patch..."
 patch -p1 < "$SCRIPT_DIR/patches/openssh-${VERSION}-sco.patch"
 
-echo "Configuring..."
-# --without-openssl: the newest OpenSSL on a stock box is 0.9.7i, and OpenSSH
-#   10.x needs 1.1.1+. Building without it uses OpenSSH's own ed25519,
-#   curve25519, ML-KEM and chacha20-poly1305 implementations instead, which is
-#   what a modern client negotiates anyway. Costs RSA and ECDSA support.
+echo "Configuring ($VARIANT variant)..."
 # --without-pam: OpenServer has no PAM. Authentication goes through the TCB
 #   (SecureWare) instead; the upstream SCO block handles that.
+if [ "$VARIANT" = "openssl" ]; then
+    if [ ! -f "$OPENSSL_DIR/lib/libcrypto.a" ]; then
+        echo "ERROR: no OpenSSL at $OPENSSL_DIR."
+        echo "The stock 0.9.7i is far below the 1.1.1 OpenSSH 10.x requires."
+        echo "Build it first (which needs Perl 5.10+ first):"
+        echo "  https://github.com/tachytelic/OpenSSL-3.5.0-for-SCO-OpenServer-5"
+        echo
+        echo "Or build the minimal ed25519-only variant instead:"
+        echo "  ./build.sh --minimal"
+        exit 1
+    fi
+    SSL_ARGS="--with-ssl-dir=$OPENSSL_DIR"
+else
+    # --without-openssl uses OpenSSH's own ed25519, curve25519, ML-KEM and
+    # chacha20-poly1305. No RSA, no ECDSA, no DH/ECDH kex, no AES-GCM.
+    SSL_ARGS="--without-openssl"
+fi
+
 ./configure \
     --prefix=/usr/local \
-    --without-openssl \
+    $SSL_ARGS \
     --without-pam \
     --with-privsep-user=sshd \
     --with-prngd-socket="$PRNGD_SOCKET"
@@ -116,8 +141,9 @@ echo "'make install' also creates var/empty under DESTDIR, and packaging bare"
 echo "./ ./usr ./var entries would rewrite those directories' ownership on the"
 echo "target machine when the archive is extracted from /):"
 echo
+if [ "$VARIANT" = "minimal" ]; then SUFFIX="-minimal"; else SUFFIX=""; fi
 echo "  cd $SCRIPT_DIR/install && gtar cf - \\"
 echo "      ./usr/local/bin ./usr/local/sbin ./usr/local/libexec \\"
-echo "      ./usr/local/etc ./usr/local/share | gzip -9 > ../openssh-${VERSION}-sco.tar.gz"
+echo "      ./usr/local/etc ./usr/local/share | gzip -9 > ../openssh-${VERSION}-sco${SUFFIX}.tar.gz"
 echo
 echo "Then see INSTALL.md. Do not skip the privsep account or IPQoS none."

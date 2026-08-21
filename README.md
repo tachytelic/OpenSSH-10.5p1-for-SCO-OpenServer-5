@@ -6,14 +6,14 @@ that SCO shipped in 2005.
 
 ```
 $ ssh -V
-OpenSSH_10.5p1, without OpenSSL
+OpenSSH_10.5p1, OpenSSL 3.5.0 8 Apr 2025
 
 $ ssh root@sco-box                      # no legacy options. none.
 $ scp bigfile.tar.gz root@sco-box:/u1/  # 50 MB verified byte-identical
 ```
 
 Negotiates `sntrup761x25519-sha512` post-quantum key exchange with an ed25519
-host key and `chacha20-poly1305`, at around 25 MB/s.
+host key and `chacha20-poly1305`, and still accepts your existing RSA keys.
 
 ## Why
 
@@ -42,6 +42,18 @@ With this build, all of the above comes out of `~/.ssh/config`.
 > [curl with TLS](https://github.com/tachytelic/curl-7.88.1-for-SCO-OpenServer-5)
 > first. The full set of builds is indexed at
 > [tachytelic.net](https://tachytelic.net/2017/07/sco-openserver-5-binaries/).
+
+### Which download
+
+| Asset | Use it if |
+|---|---|
+| **`openssh-10.5p1-sco.tar.gz`** | **Almost certainly this one.** Supports RSA, ECDSA and ed25519, so existing keys keep working. |
+| `openssh-10.5p1-sco-minimal.tar.gz` | You want the smallest possible attack surface and are willing to reissue every key as ed25519. |
+
+Both are statically linked and self-contained: **neither needs OpenSSL, Perl or
+anything else installed on the target machine.** The difference is what was
+linked in at build time. See [Limitations](#limitations-of-the-minimal-build)
+for what the minimal build gives up.
 
 See **[INSTALL.md](INSTALL.md)** for the full procedure on a box that already
 runs SCO's ssh. The two coexist: this installs under `/usr/local`, SCO's lives
@@ -104,28 +116,35 @@ PRNGD is started by `/etc/rc2.d/S85tcp`, independently of the ssh package and
 of the `SECURESHELL` switch, so disabling SCO's sshd does not take it with it.
 If PRNGD is not running, sshd fails closed on every connection.
 
-## Limitations
+## Limitations of the minimal build
 
-**ed25519 keys only.** Building `--without-openssl` means no RSA and no ECDSA,
-for host keys or user keys. Available: `ssh-ed25519`,
-`ssh-mldsa44-ed25519@openssh.com`, `curve25519-sha256`,
-`sntrup761x25519-sha512`, `mlkem768x25519-sha256`, `chacha20-poly1305` and
-AES-CTR. Not available: RSA, ECDSA, AES-GCM, AES-CBC, 3DES, all
-Diffie-Hellman group and group-exchange kex.
+The default build has no algorithm limitations worth listing: RSA, ECDSA,
+ed25519, ML-DSA, DH, ECDH, ML-KEM, AES-GCM, AES-CTR, AES-CBC, 3DES and
+chacha20-poly1305 are all present.
 
-The practical consequences:
+The **minimal** build is `--without-openssl`, which means **ed25519 keys only**:
+no RSA and no ECDSA, for host keys or user keys, and no DH/ECDH key exchange or
+AES-GCM. Available there: `ssh-ed25519`, `ssh-mldsa44-ed25519@openssh.com`,
+`curve25519-sha256`, `sntrup761x25519-sha512`, `mlkem768x25519-sha256`,
+`chacha20-poly1305` and AES-CTR.
+
+If you pick it, plan for:
 
 * **Old clients cannot connect.** ed25519 needs OpenSSH 6.5 (2014) or
-  PuTTY 0.68 (2017). Notably, other OpenServer boxes running the stock 4.3p2
-  cannot connect as clients.
+  PuTTY 0.68 (2017). Other OpenServer boxes running the stock 4.3p2 cannot
+  connect as clients at all.
 * **RSA host key pins must be reissued**: `known_hosts`, monitoring, backup
   jobs.
 * **Older embedded SSH libraries** will fail, particularly Java stacks such as
   JSch, which are RSA/DH only.
 
-The alternative is to build a modern OpenSSL first, which on this platform
-means building Perl 5.10+ before that, since OpenSSL's `Configure` opens with
-`use 5.10.0;` and OpenServer ships 5.8.8.
+There is no speed reason to prefer either. Measured on the same host, best of
+three 200 MB transfers over the virtual bridge:
+
+| Cipher | minimal | with OpenSSL |
+|---|---|---|
+| chacha20-poly1305 | 36 MB/s | 37 MB/s |
+| aes128-ctr | 36 MB/s | 39 MB/s |
 
 ## What is verified
 
@@ -141,6 +160,11 @@ On OpenServer 5.0.7 (build 66886) under Proxmox:
   from PuTTY with an ordinary account
 * **Cutover to port 22** with SCO's sshd disabled, and a reboot afterwards to
   confirm it holds
+* **RSA key authentication and RSA/ECDSA host keys** on the OpenSSL build,
+  including a legacy stack of `diffie-hellman-group14-sha1` with an
+  `rsa-sha2-256` host key and AES-CBC
+* No core files after 24 sessions, so the OpenSSL teardown segfault seen in
+  its own test suite does not reach sshd
 
 Password auth is worth calling out: this build is vanilla upstream and carries
 none of SCO's own `pmregister`/`request_license` patches to `session.c`, yet
@@ -152,12 +176,26 @@ understanding before deploying on a licence-sensitive production machine.
 
 ## Building from source
 
-**A stock OpenServer 5.0.7 cannot build this as it ships.** Two prerequisites
-have to be met first, and neither comes from SCO:
+**A stock OpenServer 5.0.7 cannot build this as it ships.** Prerequisites,
+none of which come from SCO:
 
 **1. A C99 compiler.** OpenServer ships GCC 2.95.3, which is C89 only; OpenSSH
 requires C99-style variadic macros and will not configure without them. This
 build used **GCC 3.4.6**.
+
+**1a. OpenSSL 3.x, for the default variant only.** The stock 0.9.7i is far
+below the 1.1.1 that OpenSSH 10.x requires. Building OpenSSL in turn needs
+Perl 5.10+, because its `Configure` opens with `use 5.10.0;` and OpenServer
+ships 5.8.8. So the full chain is:
+
+```
+Perl 5.38.2  ->  OpenSSL 3.5.0  ->  OpenSSH 10.5p1 with RSA and ECDSA
+```
+
+* https://github.com/tachytelic/Perl-5.38.2-for-SCO-OpenServer-5
+* https://github.com/tachytelic/OpenSSL-3.5.0-for-SCO-OpenServer-5
+
+`./build.sh --minimal` skips all of that and needs only the compiler.
 
 **2. A way to get the tarball onto the box.** The stock networking tools cannot
 reach a modern host over TLS:
@@ -182,7 +220,8 @@ Everything else the build needs **is** stock: `gtar` and `gmake` in
 With those in place:
 
 ```sh
-CC=/usr/local/bin/gcc-3.4.6 ./build.sh
+CC=/usr/local/bin/gcc-3.4.6 ./build.sh              # default, with OpenSSL
+CC=/usr/local/bin/gcc-3.4.6 ./build.sh --minimal    # ed25519 only
 ```
 
 Run it on the SCO box in a writable directory on `/u1`. It applies the patch,

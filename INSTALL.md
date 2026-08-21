@@ -21,7 +21,7 @@ satisfied, then switch.
 | The package | `openssh-10.5p1-sco.tar.gz`, relative paths, extracts from `/` into `/usr/local` |
 | A free UID/GID | for the `sshd` privilege-separation account |
 | **prngd running** | it already is; see [Entropy](#entropy-the-one-hard-dependency) |
-| An **ed25519** key | RSA will not work. See [Key migration](#key-migration-the-one-real-migration-cost) |
+| A key | RSA, ECDSA or ed25519 all work. If you took the `-minimal` package instead, ed25519 only |
 
 ## Entropy, the one hard dependency
 
@@ -61,7 +61,7 @@ refuses to start.
 ```sh
 cd /
 gunzip -c /tmp/openssh-10.5p1-sco.tar.gz | /usr/bin/tar xf -
-/usr/local/sbin/sshd -V          # expect: OpenSSH_10.5p1, without OpenSSL
+/usr/local/sbin/sshd -V          # expect: OpenSSH_10.5p1, OpenSSL 3.5.0
 ```
 
 Note `/usr/bin/tar`. There is no `/bin/tar` and no `gtar` on a stock box.
@@ -72,8 +72,8 @@ Note `/usr/bin/tar`. There is no `/bin/tar` and no `gtar` on a stock box.
 /usr/local/bin/ssh-keygen -A
 ```
 
-Produces ed25519 and mldsa44-ed25519 host keys. There will be no RSA host key;
-that is expected.
+Produces RSA, ECDSA, ed25519 and mldsa44-ed25519 host keys. With the
+`-minimal` package there will be no RSA or ECDSA host key; that is expected.
 
 ## 4. Configure
 
@@ -98,26 +98,25 @@ works too; `none` is cleaner.
 
 Use `Port 2222` for now. You will move it to 22 at cutover.
 
-## 5. Key migration, the one real migration cost
+## 5. Keys
 
-This build is `--without-openssl`, so it supports **ed25519 keys only**. No RSA,
-no ECDSA. Before cutover:
+Existing RSA and ECDSA keys keep working, so there is nothing to migrate.
+Append your public key to `~/.ssh/authorized_keys` on the SCO box as usual
+(`chmod 700 ~/.ssh`, `chmod 600 authorized_keys`).
+
+The host key changes, because this is a different daemon with its own keys.
+Anything pinning the old one needs re-pinning: `known_hosts`, monitoring,
+backup jobs.
+
+**If you took the `-minimal` package**, it supports ed25519 only. Reissue
+client keys before cutover:
 
 ```sh
 ssh-keygen -t ed25519 -f ~/.ssh/sco_ed25519     # on each client
 ```
 
-then append the public key to `~/.ssh/authorized_keys` on the SCO box
-(`chmod 700 ~/.ssh`, `chmod 600 authorized_keys`).
-
-Things that will stop working and need checking first:
-
-* **Other OpenServer boxes as clients.** Their `OpenSSH_4.3p2` has neither
-  ed25519 nor curve25519. SCO-to-SCO `ssh`/`scp` will fail.
-* **Anything pinning the old RSA host key**: `known_hosts`, monitoring,
-  backup jobs.
-* **Embedded SSH libraries**, especially older Java stacks (JSch and
-  descendants), which are RSA/DH-only.
+and note that other OpenServer boxes running the stock 4.3p2 will not be able
+to connect as clients at all.
 
 ## 6. Start it alongside and test
 
