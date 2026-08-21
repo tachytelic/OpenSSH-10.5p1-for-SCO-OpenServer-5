@@ -1,0 +1,76 @@
+#!/bin/sh
+#
+# OpenSSH (the /usr/local build) start/stop for SCO OpenServer 5.
+#
+# Install as /etc/init.d/openssh, then link:
+#   /etc/rc2.d/S86openssh  (start)  - must be after S85tcp
+#   /etc/rc0.d/K85openssh  (stop)   - must be before K96tcp
+#
+# The ordering is not cosmetic. S85tcp starts PRNGD, and PRNGD supplies all of
+# sshd's entropy on this platform: OpenServer has no /dev/urandom. Starting
+# before it means sshd fails closed on every connection. Stopping after K96tcp
+# would mean tearing down networking underneath live sessions.
+
+SSHD=/usr/local/sbin/sshd
+CONF=/usr/local/etc/sshd_config
+PIDFILE=/usr/local/etc/sshd.pid
+PRNGD_SOCKET=/etc/egd-pool
+
+case "$1" in
+
+start)
+	[ -x "$SSHD" ] || exit 0
+	[ -r "$CONF" ] || exit 0
+
+	# S85tcp has just launched PRNGD; give the socket a moment to appear.
+	n=0
+	while [ ! -r "$PRNGD_SOCKET" ] && [ $n -lt 10 ]; do
+		sleep 1
+		n=`expr $n + 1`
+	done
+	if [ ! -r "$PRNGD_SOCKET" ]; then
+		echo "openssh: $PRNGD_SOCKET not present, PRNGD is not running."
+		echo "openssh: sshd needs it for entropy and has NOT been started."
+		exit 1
+	fi
+
+	if "$SSHD" -f "$CONF"; then
+		echo "openssh \c"
+	else
+		echo "openssh: sshd failed to start"
+		exit 1
+	fi
+	;;
+
+stop)
+	if [ -r "$PIDFILE" ]; then
+		kill `cat "$PIDFILE"` 2>/dev/null
+		rm -f "$PIDFILE"
+	else
+		pids=`ps -ef | grep "[/]usr/local/sbin/sshd" | awk '{print $2}'`
+		[ -n "$pids" ] && kill $pids 2>/dev/null
+	fi
+	;;
+
+restart)
+	$0 stop
+	sleep 2
+	$0 start
+	;;
+
+status)
+	if [ -r "$PIDFILE" ] && kill -0 `cat "$PIDFILE"` 2>/dev/null; then
+		echo "sshd running, pid `cat $PIDFILE`"
+	else
+		echo "sshd not running"
+		exit 1
+	fi
+	;;
+
+*)
+	echo "usage: $0 {start|stop|restart|status}"
+	exit 1
+	;;
+esac
+
+exit 0

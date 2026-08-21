@@ -1,0 +1,23 @@
+--- openssh-10.5p1/defines.h	2026-08-21 08:46:09.503405690 +0000
++++ openssh-10.5p1/defines.h	2026-08-21 08:46:09.512405572 +0000
+@@ -27,6 +27,20 @@
+ 
+ /* Constants */
+ 
++/*
++ * SCO OpenServer 5 has no S_IFSOCK and no S_ISSOCK: stat() reports AF_UNIX
++ * sockets with the S_IFIFO type bits, so S_ISFIFO is the closest available
++ * test.  The only user of S_ISSOCK is the agent-socket scan in misc-agent.c,
++ * which connect()s to each candidate and so rejects a real FIFO anyway.
++ */
++#ifndef S_ISSOCK
++# ifdef S_IFSOCK
++#  define S_ISSOCK(m) (((m) & S_IFMT) == S_IFSOCK)
++# else
++#  define S_ISSOCK(m) S_ISFIFO(m)
++# endif
++#endif
++
+ #if defined(HAVE_DECL_SHUT_RD) && HAVE_DECL_SHUT_RD == 0
+ enum
+ {

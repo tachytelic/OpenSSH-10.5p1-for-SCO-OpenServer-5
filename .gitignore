@@ -1,0 +1,7 @@
+work/
+install/
+prebuilt/*.tar.gz
+
+*.swp
+*~
+.DS_Store
