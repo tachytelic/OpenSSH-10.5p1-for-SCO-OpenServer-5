@@ -18,7 +18,7 @@ satisfied, then switch.
 
 | | |
 |---|---|
-| The package | `openssh-10.5p1-sco.tar.gz`, relative paths, extracts from `/` into `/usr/local` |
+| The package | `openssh-10.5p1-sco-openssl.tar.gz`, relative paths, extracts from `/` into `/usr/local` |
 | A free UID/GID | for the `sshd` privilege-separation account |
 | **prngd running** | it already is; see [Entropy](#entropy-the-one-hard-dependency) |
 | A key | RSA, ECDSA or ed25519 all work. If you took the `-minimal` package instead, ed25519 only |
@@ -60,7 +60,7 @@ refuses to start.
 
 ```sh
 cd /
-gunzip -c /tmp/openssh-10.5p1-sco.tar.gz | /usr/bin/tar xf -
+gunzip -c /tmp/openssh-10.5p1-sco-openssl.tar.gz | /usr/bin/tar xf -
 /usr/local/sbin/sshd -V          # expect: OpenSSH_10.5p1, OpenSSL 3.5.0
 ```
 

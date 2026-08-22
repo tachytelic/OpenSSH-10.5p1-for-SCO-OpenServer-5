@@ -47,7 +47,7 @@ With this build, all of the above comes out of `~/.ssh/config`.
 
 | Asset | Use it if |
 |---|---|
-| **`openssh-10.5p1-sco.tar.gz`** | **Almost certainly this one.** Supports RSA, ECDSA and ed25519, so existing keys keep working. |
+| **`openssh-10.5p1-sco-openssl.tar.gz`** | **Almost certainly this one.** Supports RSA, ECDSA and ed25519, so existing keys keep working. |
 | `openssh-10.5p1-sco-minimal.tar.gz` | You want the smallest possible attack surface and are willing to reissue every key as ed25519. |
 
 Both are statically linked and self-contained: **neither needs OpenSSL, Perl or
@@ -65,7 +65,8 @@ Short version:
 /etc/groupadd -g 201 sshd
 /etc/useradd -u 201 -g 201 -d /var/empty -s /bin/false -c "sshd privsep" sshd
 mkdir -p /var/empty && chown root:sys /var/empty && chmod 755 /var/empty
-cd / && gunzip -c openssh-10.5p1-sco.tar.gz | /usr/bin/tar xf -
+curl -LO https://github.com/tachytelic/OpenSSH-10.5p1-for-SCO-OpenServer-5/releases/download/v2.0.0/openssh-10.5p1-sco-openssl.tar.gz
+cd / && gunzip -c openssh-10.5p1-sco-openssl.tar.gz | /usr/bin/tar xf -
 /usr/local/bin/ssh-keygen -A
 /usr/local/sbin/sshd -f /usr/local/etc/sshd_config
 ```
